@@ -37,6 +37,10 @@ ViroMaterials.createMaterials({
     diffuseColor: "#2F80ED",
     lightingModel: "Phong",
   },
+  reticle: {
+    diffuseColor: "#1EC8A580",
+    lightingModel: "Constant",
+  },
 });
 
 function StepRail({ activeIndex }: { activeIndex: number }) {
@@ -63,8 +67,10 @@ export default function App() {
   const [content, setContent] = useState<MuralContent | null>(null);
   const [missingContentId, setMissingContentId] = useState<string | null>(null);
   const [isTrackingAnchor, setIsTrackingAnchor] = useState(false);
+  const [isModelPlaced, setIsModelPlaced] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [scannerLocked, setScannerLocked] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const arUnlocked = Boolean(content);
   const trackingTarget = content ? getTrackingTarget(content) : undefined;
 
@@ -134,9 +140,16 @@ export default function App() {
     }
 
     setMissingContentId(null);
-    setContent(manifestEntry);
-    setIsTrackingAnchor(false);
     setDetail(`Loading ${manifestEntry.name}`);
+    setIsTrackingAnchor(false);
+    setIsModelPlaced(false);
+    setIsTransitioning(true); // Unmount scanner immediately
+    
+    // Give expo-camera 900ms to release native camera hardware before starting ARCore
+    setTimeout(() => {
+      setContent(manifestEntry);
+      setIsTransitioning(false); // Mount Viro
+    }, 900);
   }
 
   function resetScan() {
@@ -146,7 +159,9 @@ export default function App() {
     setContent(null);
     setMissingContentId(null);
     setIsTrackingAnchor(false);
+    setIsModelPlaced(false);
     setScannerLocked(false);
+    setIsTransitioning(false);
     setSetupState("checking");
     setDetail("Scan a QR code to start AR");
   }
@@ -175,7 +190,9 @@ export default function App() {
     resolveContent(choice.contentId, choice);
   }
 
-  if (!qrPayload) {
+  const showScanner = !qrPayload && !content && !isTransitioning;
+
+  if (showScanner) {
     if (!cameraPermission) {
       return (
         <SafeAreaView style={styles.centered}>
@@ -246,6 +263,12 @@ export default function App() {
             <StepRail activeIndex={0} />
             <Text style={styles.panelTitle}>Ready For QR</Text>
             <Text style={styles.panelText}>Point your camera at the code near the mural.</Text>
+            <Pressable
+              style={({ pressed }) => [styles.secondaryButton, pressed ? styles.buttonPressed : null, { marginTop: 12 }]}
+              onPress={() => resolveContent("testcar")}
+            >
+              <Text style={styles.secondaryButtonText}>Quick Test: Mazda RX-77</Text>
+            </Pressable>
           </View>
         </SafeAreaView>
         <StatusBar style="light" />
@@ -311,7 +334,7 @@ export default function App() {
     );
   }
 
-  if (setupState !== "ready") {
+  if (isTransitioning || setupState !== "ready") {
     return (
       <SafeAreaView style={styles.centered}>
         <View style={styles.brandMark}>
@@ -341,6 +364,8 @@ export default function App() {
           qrPayload,
           selectedChoice,
           onTrackingChange: setIsTrackingAnchor,
+          isPlaced: isModelPlaced,
+          onPlacementStateChange: setIsModelPlaced,
         }}
       />
       <SafeAreaView pointerEvents="none" style={styles.arOverlay}>
@@ -352,7 +377,15 @@ export default function App() {
             </Text>
           </View>
           <View style={styles.arStatusBadge}>
-            <Text style={styles.arStatusText}>{trackingTarget ? (isTrackingAnchor ? "LOCKED" : "FIND QR") : "DEV"}</Text>
+            <Text style={styles.arStatusText}>
+              {trackingTarget
+                ? isTrackingAnchor
+                  ? "LOCKED"
+                  : "FIND QR"
+                : isModelPlaced
+                ? "PLACED"
+                : "TARGETING"}
+            </Text>
           </View>
         </View>
 
@@ -363,8 +396,19 @@ export default function App() {
               ? isTrackingAnchor
                 ? "Content is anchored to the QR marker."
                 : "Point the camera back at the QR code to lock the mural content."
-              : "Development mode: tap a highlighted plane to place the placeholder content."}
+              : isModelPlaced
+              ? "Drag to slide along the ground. Pinch to resize. Two-finger twist to rotate."
+              : "Point your camera at the floor. Tap a highlighted surface to choose where to place the model."}
           </Text>
+          {!trackingTarget && isModelPlaced ? (
+            <Pressable
+              pointerEvents="auto"
+              style={({ pressed }) => [styles.secondaryButton, pressed ? styles.buttonPressed : null, { marginTop: 10 }]}
+              onPress={() => setIsModelPlaced(false)}
+            >
+              <Text style={styles.secondaryButtonText}>Reposition</Text>
+            </Pressable>
+          ) : null}
         </View>
       </SafeAreaView>
       <StatusBar style="light" />

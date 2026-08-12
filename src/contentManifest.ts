@@ -10,6 +10,7 @@ export type MuralContent = {
   description: string;
   assetUrl?: string;
   assetUrlAndroid?: string;
+  localAsset?: any;
   assetType: "GLB" | "GLTF" | "placeholder";
   scale: number;
   loop: boolean;
@@ -17,6 +18,15 @@ export type MuralContent = {
 };
 
 export const contentManifest: Record<string, MuralContent> = {
+  testcar: {
+    id: "testcar",
+    name: "Mazda RX-77",
+    description: "3D Mazda RX-77 local model loaded directly from app assets.",
+    assetType: "GLB",
+    localAsset: require("../assets/models/Mazda RX-77.glb"),
+    scale: 0.2,
+    loop: true,
+  },
   mural_001: {
     id: "mural_001",
     name: "Maskara Dance - Bacolod Plaza",
