@@ -31,25 +31,41 @@ type SceneNavigatorProps = {
   };
 };
 
-ViroAnimations.registerAnimations({
-  contentEnter: {
-    duration: 650,
-    easing: "EaseOut",
-    properties: {
-      opacity: 1,
-      scaleX: 1,
-      scaleY: 1,
-      scaleZ: 1,
-    },
-  },
-  idleSpin: {
-    duration: 4200,
-    easing: "Linear",
-    properties: {
-      rotateY: "+=360",
-    },
-  },
-});
+import { NativeModules, TurboModuleRegistry } from "react-native";
+
+export function initViroAnimations() {
+  const animManager =
+    NativeModules.VRTAnimationManager ||
+    (TurboModuleRegistry ? TurboModuleRegistry.get("VRTAnimationManager") : null);
+
+  if (animManager && ViroAnimations?.registerAnimations) {
+    try {
+      ViroAnimations.registerAnimations({
+        contentEnter: {
+          duration: 650,
+          easing: "EaseOut",
+          properties: {
+            opacity: 1,
+            scaleX: 1,
+            scaleY: 1,
+            scaleZ: 1,
+          },
+        },
+        idleSpin: {
+          duration: 4200,
+          easing: "Linear",
+          properties: {
+            rotateY: "+=360",
+          },
+        },
+      });
+    } catch (e) {
+      console.warn("ViroAnimations initialization skipped:", e);
+    }
+  }
+}
+
+initViroAnimations();
 
 // ---------- Placement Reticle (shown before placing) ----------
 
@@ -99,8 +115,8 @@ const ManifestContent = React.memo(function ManifestContent({ content }: { conte
     const rawSource = content.localAsset
       ? content.localAsset
       : androidAssetUrl
-      ? { uri: androidAssetUrl }
-      : null;
+        ? { uri: androidAssetUrl }
+        : null;
 
     return typeof rawSource === "number"
       ? Image.resolveAssetSource(rawSource)

@@ -1,4 +1,4 @@
-import { ImageSourcePropType } from "react-native";
+import { ImageSourcePropType, NativeModules, TurboModuleRegistry } from "react-native";
 import { ViroARTrackingTargets } from "@reactvision/react-viro";
 
 import { MuralContent } from "./contentManifest";
@@ -43,7 +43,18 @@ export function registerTrackingTargets() {
   );
 
   if (Object.keys(targets).length > 0) {
-    ViroARTrackingTargets.createTargets(targets);
+    const trackingManager =
+      NativeModules.VRTTrackingTargetManager ||
+      NativeModules.VRTARTrackingTargetsModule ||
+      (TurboModuleRegistry ? TurboModuleRegistry.get("VRTARTrackingTargetsModule") : null);
+
+    if (trackingManager && ViroARTrackingTargets?.createTargets) {
+      try {
+        ViroARTrackingTargets.createTargets(targets);
+      } catch (e) {
+        console.warn("ViroARTrackingTargets initialization skipped:", e);
+      }
+    }
   }
 
   targetsRegistered = true;
