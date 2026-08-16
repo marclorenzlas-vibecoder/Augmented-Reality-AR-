@@ -1,6 +1,7 @@
 import { StatusBar } from "expo-status-bar";
 import { BarcodeScanningResult, CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -31,7 +32,7 @@ import { contentManifest, ContentChoice, MuralContent } from "./src/contentManif
 import { getTrackingTarget } from "./src/arTargets";
 import { parseQrPayload, QrPayload } from "./src/qrPayload";
 
-type SetupState = "checking" | "ready" | "unsupported" | "permission-denied" | "error";
+type SetupState = "checking" | "ready" | "unsupported" | "permission-denied" | "error" | "navigating";
 
 export function initViroMaterials() {
   const manager =
@@ -264,6 +265,12 @@ function BottomControlsBar({
 // Main App
 export default function App() {
   const [setupState, setSetupState] = useState<SetupState>("checking");
+  const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
+  const [currentHeading, setCurrentHeading] = useState<number | null>(null);
+  const [targetDistance, setTargetDistance] = useState<number | null>(null);
+  const [targetBearing, setTargetBearing] = useState<number | null>(null);
+  const locationSubRef = useRef<Location.LocationSubscription | null>(null);
+  const headingSubRef = useRef<Location.LocationSubscription | null>(null);
   const [detail, setDetail] = useState("Preparing AR");
   const [qrPayload, setQrPayload] = useState<QrPayload | null>(null);
   const [choices, setChoices] = useState<ContentChoice[]>([]);
@@ -437,6 +444,68 @@ export default function App() {
     return () => { mounted = false; };
   }, [arUnlocked, qrPayload]);
 
+
+  async function startNavigation(targetContent: MuralContent) {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setDetail("Location permission required for AR discovery.");
+        setSetupState("permission-denied");
+        return;
+      }
+      
+      locationSubRef.current = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.High, timeInterval: 1000, distanceInterval: 1 },
+        (loc) => {
+          setCurrentLocation(loc);
+        }
+      );
+
+      headingSubRef.current = await Location.watchHeadingAsync((head) => {
+        setCurrentHeading(head.magHeading);
+      });
+    } catch (e) {
+      console.warn(e);
+      setSetupState("error");
+    }
+  }
+
+  useEffect(() => {
+    if (setupState === "navigating" && content?.latitude && content?.longitude && currentLocation) {
+      const lat1 = currentLocation.coords.latitude;
+      const lon1 = currentLocation.coords.longitude;
+      const lat2 = content.latitude;
+      const lon2 = content.longitude;
+
+      const R = 6371e3;
+      const phi1 = lat1 * Math.PI/180;
+      const phi2 = lat2 * Math.PI/180;
+      const deltaphi = (lat2-lat1) * Math.PI/180;
+      const deltalambda = (lon2-lon1) * Math.PI/180;
+
+      const a = Math.sin(deltaphi/2) * Math.sin(deltaphi/2) +
+                Math.cos(phi1) * Math.cos(phi2) *
+                Math.sin(deltalambda/2) * Math.sin(deltalambda/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const dist = R * c;
+
+      const y = Math.sin(deltalambda) * Math.cos(phi2);
+      const x = Math.cos(phi1)*Math.sin(phi2) - Math.sin(phi1)*Math.cos(phi2)*Math.cos(deltalambda);
+      const brng = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+
+      setTargetDistance(dist);
+      setTargetBearing(brng);
+
+      const triggerRadius = content.radius ?? 5;
+      if (dist <= triggerRadius && !isTransitioning) {
+        setDetail(`Loading ${content.name}`);
+        setSetupState("ready");
+        if (locationSubRef.current) { locationSubRef.current.remove(); locationSubRef.current = null; }
+        if (headingSubRef.current) { headingSubRef.current.remove(); headingSubRef.current = null; }
+      }
+    }
+  }, [currentLocation, setupState, content, isTransitioning]);
+
   function resolveContent(contentId: string, choice?: ContentChoice, dynamicContent?: MuralContent) {
     const manifestEntry = dynamicContent ?? choice?.dynamicContent ?? contentManifest[contentId];
     setSelectedChoice(choice ?? null);
@@ -447,6 +516,14 @@ export default function App() {
       setDetail("Content coming soon");
       return;
     }
+    if (manifestEntry.latitude !== undefined && manifestEntry.longitude !== undefined) {
+      setContent(manifestEntry);
+      setSetupState("navigating");
+      setDetail(`Navigating to ${manifestEntry.name}`);
+      startNavigation(manifestEntry);
+      return;
+    }
+
     setMissingContentId(null);
     setDetail(`Loading ${manifestEntry.name}`);
     setIsTrackingAnchor(false);
@@ -460,6 +537,12 @@ export default function App() {
 
   function resetScan() {
     // Tear down the AR scene gracefully before unmounting ViroARSceneNavigator
+    if (locationSubRef.current) { locationSubRef.current.remove(); locationSubRef.current = null; }
+    if (headingSubRef.current) { headingSubRef.current.remove(); headingSubRef.current = null; }
+    setCurrentLocation(null);
+    setCurrentHeading(null);
+    setTargetDistance(null);
+    setTargetBearing(null);
     setIsTransitioning(true);
     setContent(null);
     setIsTrackingAnchor(false);
@@ -641,6 +724,48 @@ export default function App() {
             <Text style={styles.ghostBtnText}>Scan Again</Text>
           </Pressable>
         </SafeAreaView>
+        <StatusBar style="light" />
+      </View>
+    );
+  }
+
+  // Navigation View
+  if (setupState === "navigating") {
+    let arrowRotation = 0;
+    if (currentHeading !== null && targetBearing !== null) {
+      arrowRotation = targetBearing - currentHeading;
+    }
+    
+    return (
+      <View style={styles.cameraRoot}>
+        <CameraView facing="back" style={StyleSheet.absoluteFillObject} />
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' }]}>
+          <Text style={{ color: '#1EC8A5', fontSize: 32, fontWeight: '900', marginBottom: 40, textAlign: 'center' }}>
+            {targetDistance !== null ? `${Math.round(targetDistance)}m\nTO DESTINATION` : "CALCULATING\nROUTE..."}
+          </Text>
+          <View style={{ width: 220, height: 220, borderRadius: 110, borderWidth: 4, borderColor: '#1EC8A5', justifyContent: 'center', alignItems: 'center', backgroundColor: '#050D0C' }}>
+            {targetBearing !== null && currentHeading !== null ? (
+              <Ionicons 
+                name="navigate" 
+                size={100} 
+                color="#1EC8A5" 
+                style={{ transform: [{ rotate: `${arrowRotation - 45}deg` }] }}
+              />
+            ) : (
+              <ActivityIndicator color="#1EC8A5" size="large" />
+            )}
+          </View>
+          <Text style={{ color: '#fff', fontSize: 16, marginTop: 40, textAlign: 'center', paddingHorizontal: 40, lineHeight: 24, opacity: 0.8 }}>
+            Follow the compass to your destination. AR discovery will trigger automatically when you are within {content?.radius ?? 5} meters.
+          </Text>
+          
+          <Pressable
+            style={({ pressed }) => [styles.ghostBtn, pressed && styles.btnPressed, { marginTop: 40 }]}
+            onPress={resetScan}
+          >
+            <Text style={styles.ghostBtnText}>Cancel Navigation</Text>
+          </Pressable>
+        </View>
         <StatusBar style="light" />
       </View>
     );

@@ -133,80 +133,22 @@ function PlaceholderContent() {
 // ---------- 3D Model Content – downloads remote GLB to cache first ----------
 
 const ManifestContent = React.memo(function ManifestContent({ content }: { content: MuralContent }) {
-  const [localUri, setLocalUri] = useState<string | number | null>(null);
-  const [downloading, setDownloading] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     setLoadError(false);
-    setLocalUri(null);
+  }, [content.id]);
 
-    if (content.localAsset != null) {
-      setLocalUri(content.localAsset as unknown as number);
-      return;
-    }
-
-    const rawUrl = (content.assetUrlAndroid ?? content.assetUrl ?? "") as string;
-    if (!rawUrl) return;
-
-    if (content.assetType === "VIDEO") {
-      setLocalUri(rawUrl);
-      return;
-    }
-
-    const filename = rawUrl.split("?")[0].split("/").pop() ?? "model.glb";
-    const destPath = `${FileSystem.cacheDirectory}ar_models/${filename}`;
-
-    async function downloadAsset() {
-      setDownloading(true);
-      try {
-        await FileSystem.makeDirectoryAsync(
-          `${FileSystem.cacheDirectory}ar_models/`,
-          { intermediates: true },
-        );
-
-        const info = await FileSystem.getInfoAsync(destPath);
-        if (info.exists) {
-          setLocalUri(destPath);
-          setDownloading(false);
-          return;
-        }
-
-        const result = await FileSystem.downloadAsync(rawUrl, destPath);
-        if (result.status === 200) {
-          setLocalUri(result.uri);
-        } else {
-          console.warn("Download failed, status:", result.status);
-          setLoadError(true);
-        }
-      } catch (e) {
-        console.warn("Failed to download AR asset:", e);
-        setLoadError(true);
-      } finally {
-        setDownloading(false);
-      }
-    }
-
-    downloadAsset();
-  }, [content.id, content.localAsset, content.assetUrl, content.assetUrlAndroid]);
-
-  if (downloading || (!localUri && !loadError)) {
-    return null;
-  }
-
-  if (loadError || !localUri) {
+  if (loadError) {
     return <PlaceholderContent />;
   }
 
-  const source =
-    typeof localUri === "number"
-      ? localUri
-      : { uri: localUri };
-
   if (content.assetType === "VIDEO") {
+    const rawUrl = (content.assetUrlAndroid ?? content.assetUrl ?? "") as string;
+    if (!rawUrl) return <PlaceholderContent />;
     return (
       <ViroVideo
-        source={source}
+        source={{ uri: rawUrl }}
         loop={content.loop ?? true}
         paused={false}
         width={1.6}
@@ -218,6 +160,14 @@ const ManifestContent = React.memo(function ManifestContent({ content }: { conte
         }}
       />
     );
+  }
+
+  const source = content.localAsset != null 
+    ? content.localAsset 
+    : { uri: (content.assetUrlAndroid ?? content.assetUrl ?? "") as string };
+
+  if (!source || (typeof source === 'object' && !source.uri)) {
+    return <PlaceholderContent />;
   }
 
   return (
@@ -332,9 +282,9 @@ export default function ARExperienceScene(props?: SceneNavigatorProps) {
             <ManifestContent content={content} />
           </InteractiveContainer>
         </ViroARImageMarker>
-      ) : (
-        // ---- Instant AR World Placement Mode ----
-        <ViroNode position={[0, -0.25, -1.0]}>
+      ) : content.latitude !== undefined && content.longitude !== undefined ? (
+        // ---- Geo-Anchored Discovery Mode (Scenario A) ----
+        <ViroNode position={[0, -0.25, -1.5]}>
           <InteractiveContainer
             content={content}
             userScale={userScale}
@@ -343,6 +293,30 @@ export default function ARExperienceScene(props?: SceneNavigatorProps) {
           >
             <ManifestContent content={content} />
           </InteractiveContainer>
+        </ViroNode>
+      ) : (
+        // ---- Sandbox / Plane Placement Mode (Scenario B) ----
+        <ViroNode>
+          <ViroARPlaneSelector
+            ref={selectorRef}
+            minHeight={0.1}
+            minWidth={0.1}
+            alignment="Horizontal"
+            onPlaneSelected={() => {
+              setInternalPlaced(true);
+              onPlacementStateChange?.(true);
+            }}
+          >
+            <InteractiveContainer
+              content={content}
+              userScale={userScale}
+              userRotation={userRotation}
+              userPosition={userPosition}
+            >
+              <ManifestContent content={content} />
+            </InteractiveContainer>
+          </ViroARPlaneSelector>
+          {!isPlaced && <PlacementReticle />}
         </ViroNode>
       )}
     </ViroARScene>

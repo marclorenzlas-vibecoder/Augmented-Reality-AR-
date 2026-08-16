@@ -138,6 +138,12 @@ export function parseQrPayload(data: string): QrPayload {
     const scale = typeof parsed.scale === "number" ? parsed.scale : 0.2;
     const name = typeof parsed.name === "string" ? parsed.name.trim() : typeof parsed.title === "string" ? parsed.title.trim() : "Online AR Asset";
 
+    const latitude = typeof parsed.latitude === "number" ? parsed.latitude : undefined;
+    const longitude = typeof parsed.longitude === "number" ? parsed.longitude : undefined;
+    const altitude = typeof parsed.altitude === "number" ? parsed.altitude : undefined;
+    const radius = typeof parsed.radius === "number" ? parsed.radius : undefined;
+    const heading = typeof parsed.heading === "number" ? parsed.heading : undefined;
+
     let dynamicContent: MuralContent | undefined;
     if (rawUrl) {
       dynamicContent = {
@@ -148,6 +154,11 @@ export function parseQrPayload(data: string): QrPayload {
         assetType: inferAssetType(rawUrl, explicitType),
         scale,
         loop: true,
+        latitude,
+        longitude,
+        altitude,
+        radius,
+        heading,
       };
     }
 
@@ -181,6 +192,12 @@ export function parseQrPayload(data: string): QrPayload {
       const scaleParam = parseFloat(url.searchParams.get("scale") || "0.2");
       const name = url.searchParams.get("name") || url.searchParams.get("title") || "Online AR Asset";
 
+      const latParam = parseFloat(url.searchParams.get("lat") || "");
+      const lngParam = parseFloat(url.searchParams.get("lng") || "");
+      const altParam = parseFloat(url.searchParams.get("alt") || "");
+      const radParam = parseFloat(url.searchParams.get("rad") || "");
+      const headParam = parseFloat(url.searchParams.get("heading") || "");
+
       dynamicContent = {
         id: getIdFromUrl(url) || "online_url",
         name,
@@ -189,6 +206,11 @@ export function parseQrPayload(data: string): QrPayload {
         assetType: inferAssetType(assetUrl, explicitType),
         scale: isNaN(scaleParam) ? 0.2 : scaleParam,
         loop: true,
+        latitude: isNaN(latParam) ? undefined : latParam,
+        longitude: isNaN(lngParam) ? undefined : lngParam,
+        altitude: isNaN(altParam) ? undefined : altParam,
+        radius: isNaN(radParam) ? undefined : radParam,
+        heading: isNaN(headParam) ? undefined : headParam,
       };
     }
 

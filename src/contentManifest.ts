@@ -21,6 +21,11 @@ export type MuralContent = {
   trackingTargetName?: string;
   animationName?: string;
   effectType?: string;
+  latitude?: number;
+  longitude?: number;
+  altitude?: number;
+  radius?: number;
+  heading?: number;
 };
 
 export const contentManifest: Record<string, MuralContent> = {
