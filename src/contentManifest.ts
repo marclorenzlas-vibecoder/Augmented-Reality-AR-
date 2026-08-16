@@ -2,6 +2,10 @@ export type ContentChoice = {
   id: string;
   label: string;
   contentId: string;
+  assetUrl?: string;
+  assetType?: "GLB" | "GLTF" | "VIDEO" | "placeholder";
+  scale?: number;
+  dynamicContent?: MuralContent;
 };
 
 export type MuralContent = {
@@ -11,10 +15,12 @@ export type MuralContent = {
   assetUrl?: string;
   assetUrlAndroid?: string;
   localAsset?: any;
-  assetType: "GLB" | "GLTF" | "placeholder";
+  assetType: "GLB" | "GLTF" | "VIDEO" | "placeholder";
   scale: number;
   loop: boolean;
   trackingTargetName?: string;
+  animationName?: string;
+  effectType?: string;
 };
 
 export const contentManifest: Record<string, MuralContent> = {

@@ -1,4 +1,4 @@
-﻿# Augmented Reality AR Starter
+# Augmented Reality AR Starter
 
 React Native + Expo + ViroReact starter for a QR-triggered mural tourism AR viewer.
 
@@ -78,14 +78,16 @@ npm run android
 
 ## Build APK
 
+To build the debug APK (ready to install on any Android phone):
+
 ```bash
-npm run build:android:apk
+npm run build:android:debug
 ```
 
-The APK will be created at:
+The APK is created at:
 
 ```text
-android/app/build/outputs/apk/release/app-release.apk
+android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-For sharing outside your phone, you will eventually want to sign the APK/AAB with your own release key.
+Or run `npm run build:android:apk` to build the release APK.

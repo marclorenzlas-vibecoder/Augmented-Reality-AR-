@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Image } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import * as FileSystem from "expo-file-system/legacy";
 import {
   Viro3DObject,
   ViroAmbientLight,
@@ -14,6 +14,7 @@ import {
   ViroNode,
   ViroQuad,
   ViroSphere,
+  ViroVideo,
 } from "@reactvision/react-viro";
 
 import { getTrackingTarget, registerTrackingTargets } from "./arTargets";
@@ -27,6 +28,9 @@ type SceneNavigatorProps = {
       onAssetStateChange?: (state: string) => void;
       isPlaced?: boolean;
       onPlacementStateChange?: (isPlaced: boolean) => void;
+      userScale?: number;
+      userRotation?: [number, number, number];
+      userPosition?: [number, number, number];
     };
   };
 };
@@ -41,6 +45,27 @@ export function initViroAnimations() {
   if (animManager && ViroAnimations?.registerAnimations) {
     try {
       ViroAnimations.registerAnimations({
+        popEnter: [
+          {
+            properties: {
+              scaleX: 1.08,
+              scaleY: 1.08,
+              scaleZ: 1.08,
+              opacity: 1,
+            },
+            duration: 550,
+            easing: "EaseOut",
+          },
+          {
+            properties: {
+              scaleX: 1.0,
+              scaleY: 1.0,
+              scaleZ: 1.0,
+            },
+            duration: 250,
+            easing: "EaseInEaseOut",
+          },
+        ],
         contentEnter: {
           duration: 650,
           easing: "EaseOut",
@@ -105,91 +130,139 @@ function PlaceholderContent() {
   );
 }
 
-// ---------- 3D Model Content (memoized to prevent reloads) ----------
+// ---------- 3D Model Content – downloads remote GLB to cache first ----------
 
 const ManifestContent = React.memo(function ManifestContent({ content }: { content: MuralContent }) {
+  const [localUri, setLocalUri] = useState<string | number | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
-  const source = useMemo(() => {
-    const androidAssetUrl = content.assetUrlAndroid ?? content.assetUrl;
-    const rawSource = content.localAsset
-      ? content.localAsset
-      : androidAssetUrl
-        ? { uri: androidAssetUrl }
-        : null;
+  useEffect(() => {
+    setLoadError(false);
+    setLocalUri(null);
 
-    return typeof rawSource === "number"
-      ? Image.resolveAssetSource(rawSource)
-      : rawSource;
+    if (content.localAsset != null) {
+      setLocalUri(content.localAsset as unknown as number);
+      return;
+    }
+
+    const rawUrl = (content.assetUrlAndroid ?? content.assetUrl ?? "") as string;
+    if (!rawUrl) return;
+
+    if (content.assetType === "VIDEO") {
+      setLocalUri(rawUrl);
+      return;
+    }
+
+    const filename = rawUrl.split("?")[0].split("/").pop() ?? "model.glb";
+    const destPath = `${FileSystem.cacheDirectory}ar_models/${filename}`;
+
+    async function downloadAsset() {
+      setDownloading(true);
+      try {
+        await FileSystem.makeDirectoryAsync(
+          `${FileSystem.cacheDirectory}ar_models/`,
+          { intermediates: true },
+        );
+
+        const info = await FileSystem.getInfoAsync(destPath);
+        if (info.exists) {
+          setLocalUri(destPath);
+          setDownloading(false);
+          return;
+        }
+
+        const result = await FileSystem.downloadAsync(rawUrl, destPath);
+        if (result.status === 200) {
+          setLocalUri(result.uri);
+        } else {
+          console.warn("Download failed, status:", result.status);
+          setLoadError(true);
+        }
+      } catch (e) {
+        console.warn("Failed to download AR asset:", e);
+        setLoadError(true);
+      } finally {
+        setDownloading(false);
+      }
+    }
+
+    downloadAsset();
   }, [content.id, content.localAsset, content.assetUrl, content.assetUrlAndroid]);
 
-  if (content.assetType !== "placeholder" && source && !loadError) {
+  if (downloading || (!localUri && !loadError)) {
+    return null;
+  }
+
+  if (loadError || !localUri) {
+    return <PlaceholderContent />;
+  }
+
+  const source =
+    typeof localUri === "number"
+      ? localUri
+      : { uri: localUri };
+
+  if (content.assetType === "VIDEO") {
     return (
-      <Viro3DObject
-        position={[0, 0, 0]}
+      <ViroVideo
         source={source}
-        type={content.assetType}
+        loop={content.loop ?? true}
+        paused={false}
+        width={1.6}
+        height={0.9}
+        position={[0, 0.5, 0]}
         onError={(event) => {
-          console.warn("Error loading 3D model asset:", event?.nativeEvent);
+          console.warn("Video load error:", event?.nativeEvent);
           setLoadError(true);
         }}
       />
     );
   }
 
-  return <PlaceholderContent />;
+  return (
+    <Viro3DObject
+      position={[0, 0, 0]}
+      source={source}
+      type={content.assetType as "GLB" | "GLTF"}
+      animation={
+        content.animationName
+          ? { name: content.animationName, run: true, loop: content.loop ?? true }
+          : undefined
+      }
+      onError={(event) => {
+        console.warn("3D model load error:", event?.nativeEvent);
+        setLoadError(true);
+      }}
+    />
+  );
 });
 
-// ---------- Interactive Container (drag, rotate, pinch) ----------
+// ---------- Interactive Container (responsive scale, rotation, drag) ----------
 
-function InteractiveContainer({ content, children }: { content: MuralContent; children: React.ReactNode }) {
-  const [scale, setScale] = useState<[number, number, number]>([content.scale, content.scale, content.scale]);
-  const [rotation, setRotation] = useState<[number, number, number]>([0, 0, 0]);
-
-  const currentScaleRef = useRef<number>(content.scale);
-  const baseScaleRef = useRef<number>(content.scale);
-  const currentRotationYRef = useRef<number>(0);
-  const baseRotationYRef = useRef<number>(0);
-
-  useEffect(() => {
-    setScale([content.scale, content.scale, content.scale]);
-    setRotation([0, 0, 0]);
-    currentScaleRef.current = content.scale;
-    baseScaleRef.current = content.scale;
-    currentRotationYRef.current = 0;
-    baseRotationYRef.current = 0;
-  }, [content.id, content.scale]);
-
-  // Two-finger pinch to scale
-  const handlePinch = (pinchState: number, scaleFactor: number) => {
-    if (pinchState === 1) {
-      baseScaleRef.current = currentScaleRef.current;
-    } else if (pinchState === 2) {
-      const nextScale = Math.max(0.005, Math.min(20.0, baseScaleRef.current * scaleFactor));
-      currentScaleRef.current = nextScale;
-      setScale([nextScale, nextScale, nextScale]);
-    }
-  };
-
-  // Two-finger rotate to spin left/right
-  const handleRotate = (rotateState: number, rotationFactor: number) => {
-    if (rotateState === 1) {
-      baseRotationYRef.current = currentRotationYRef.current;
-    } else if (rotateState === 2) {
-      const nextRotY = baseRotationYRef.current - rotationFactor;
-      currentRotationYRef.current = nextRotY;
-      setRotation([0, nextRotY, 0]);
-    }
-  };
+function InteractiveContainer({
+  content,
+  userScale,
+  userRotation,
+  userPosition,
+  children,
+}: {
+  content: MuralContent;
+  userScale?: number;
+  userRotation?: [number, number, number];
+  userPosition?: [number, number, number];
+  children: React.ReactNode;
+}) {
+  const currentScaleValue = userScale ?? content.scale ?? 0.2;
+  const currentScale: [number, number, number] = [currentScaleValue, currentScaleValue, currentScaleValue];
+  const currentRotation: [number, number, number] = userRotation ?? [0, 0, 0];
+  const currentPosition: [number, number, number] = userPosition ?? [0, 0, 0];
 
   return (
     <ViroNode
-      rotation={rotation}
-      scale={scale}
-      dragType="FixedToPlane"
-      dragPlane={{ planePoint: [0, 0, 0], planeNormal: [0, 1, 0], maxDistance: 20 }}
-      onRotate={handleRotate}
-      onPinch={handlePinch}
+      position={currentPosition}
+      rotation={currentRotation}
+      scale={currentScale}
     >
       {children}
     </ViroNode>
@@ -208,6 +281,9 @@ export default function ARExperienceScene(props?: SceneNavigatorProps) {
   const onTrackingChange = props?.sceneNavigator?.viroAppProps?.onTrackingChange;
   const externalPlaced = props?.sceneNavigator?.viroAppProps?.isPlaced;
   const onPlacementStateChange = props?.sceneNavigator?.viroAppProps?.onPlacementStateChange;
+  const userScale = props?.sceneNavigator?.viroAppProps?.userScale;
+  const userRotation = props?.sceneNavigator?.viroAppProps?.userRotation;
+  const userPosition = props?.sceneNavigator?.viroAppProps?.userPosition;
 
   const isPlaced = externalPlaced ?? internalPlaced;
 
@@ -229,12 +305,6 @@ export default function ARExperienceScene(props?: SceneNavigatorProps) {
     onTrackingChange?.(isTracking);
   }
 
-  function handlePlaneSelected() {
-    setTracking(true);
-    setInternalPlaced(true);
-    onPlacementStateChange?.(true);
-  }
-
   return (
     <ViroARScene
       anchorDetectionTypes={trackingTarget ? ["Images"] : ["PlanesHorizontal"]}
@@ -253,28 +323,27 @@ export default function ARExperienceScene(props?: SceneNavigatorProps) {
           onAnchorRemoved={() => setTracking(false)}
           pauseUpdates={!hasAnchor}
         >
-          <InteractiveContainer content={content}>
+          <InteractiveContainer
+            content={content}
+            userScale={userScale}
+            userRotation={userRotation}
+            userPosition={userPosition}
+          >
             <ManifestContent content={content} />
           </InteractiveContainer>
         </ViroARImageMarker>
       ) : (
-        // ---- Plane Selection Mode ----
-        <ViroARPlaneSelector
-          ref={selectorRef}
-          alignment="Horizontal"
-          minHeight={0.1}
-          minWidth={0.1}
-          onPlaneSelected={handlePlaneSelected}
-          onPlaneRemoved={() => setTracking(false)}
-        >
-          {isPlaced ? (
-            <InteractiveContainer content={content}>
-              <ManifestContent content={content} />
-            </InteractiveContainer>
-          ) : (
-            <PlacementReticle />
-          )}
-        </ViroARPlaneSelector>
+        // ---- Instant AR World Placement Mode ----
+        <ViroNode position={[0, -0.25, -1.0]}>
+          <InteractiveContainer
+            content={content}
+            userScale={userScale}
+            userRotation={userRotation}
+            userPosition={userPosition}
+          >
+            <ManifestContent content={content} />
+          </InteractiveContainer>
+        </ViroNode>
       )}
     </ViroARScene>
   );

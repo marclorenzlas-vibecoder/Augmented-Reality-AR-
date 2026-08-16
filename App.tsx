@@ -1,12 +1,14 @@
 import { StatusBar } from "expo-status-bar";
 import { BarcodeScanningResult, CameraView, useCameraPermissions } from "expo-camera";
-import React, { useEffect, useRef, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
   Easing,
   Linking,
   NativeModules,
+  PanResponder,
   Pressable,
   Platform,
   SafeAreaView,
@@ -30,7 +32,6 @@ import { getTrackingTarget } from "./src/arTargets";
 import { parseQrPayload, QrPayload } from "./src/qrPayload";
 
 type SetupState = "checking" | "ready" | "unsupported" | "permission-denied" | "error";
-type FlashMode = "auto" | "on" | "off";
 
 export function initViroMaterials() {
   const manager =
@@ -78,46 +79,133 @@ function ScanLine({ locked }: { locked: boolean }) {
 }
 
 // Top camera controls bar
-function TopControlsBar({
-  flash,
-  onFlashToggle,
-}: {
-  flash: FlashMode;
-  onFlashToggle: () => void;
-}) {
-  const flashLabel = flash === "auto" ? "A" : flash === "on" ? "ON" : "OFF";
-  const flashColor = flash === "on" ? "#F2C14E" : flash === "off" ? "#94A3B8" : "#1EC8A5";
-
+function TopControlsBar() {
   return (
     <View style={styles.topControlsBar}>
-      <Pressable style={[styles.topIconPill, { borderColor: flashColor + "80" }]} onPress={onFlashToggle}>
-        <Text style={[styles.topIconText, { color: flashColor }]}>{"⚡ " + flashLabel}</Text>
-      </Pressable>
       <View style={styles.appNameBadge}>
-        <View style={styles.appNameDot} />
         <Text style={styles.appNameText}>AR STUDIO</Text>
-      </View>
-      <View style={[styles.topIconPill, { borderColor: "#1EC8A580" }]}>
-        <Text style={[styles.topIconText, { color: "#1EC8A5" }]}>
-          {"SCAN QR"}
-        </Text>
       </View>
     </View>
   );
 }
 
+const ZOOM_PRESETS = [
+  { label: "1x", value: 0 },
+  { label: "2x", value: 0.25 },
+  { label: "3x", value: 0.5 },
+];
+
 // Zoom selector
-function ZoomSelector() {
-  const [zoom, setZoom] = useState("1x");
-  const zooms = [".5x", "1x", "2x"];
+function ZoomSelector({
+  currentZoom,
+  onZoomChange,
+}: {
+  currentZoom: number;
+  onZoomChange: (z: number) => void;
+}) {
   return (
     <View style={styles.zoomRow}>
-      {zooms.map((z) => (
-        <Pressable key={z} style={[styles.zoomBtn, zoom === z && styles.zoomBtnActive]} onPress={() => setZoom(z)}>
-          <Text style={[styles.zoomText, zoom === z && styles.zoomTextActive]}>{z}</Text>
-        </Pressable>
-      ))}
+      {ZOOM_PRESETS.map((preset) => {
+        const isActive = Math.abs(currentZoom - preset.value) < 0.05;
+        return (
+          <Pressable
+            key={preset.label}
+            style={[styles.zoomBtn, isActive && styles.zoomBtnActive]}
+            onPress={() => onZoomChange(preset.value)}
+          >
+            <Text style={[styles.zoomText, isActive && styles.zoomTextActive]}>
+              {preset.label}
+            </Text>
+          </Pressable>
+        );
+      })}
     </View>
+  );
+}
+
+// Floating auto-dismissing hint bubble (disappears after 5 seconds)
+function FloatingHintBubble({ text }: { text: string }) {
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    fadeAnim.setValue(1);
+    setVisible(true);
+    const timer = setTimeout(() => {
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 800,
+        useNativeDriver: true,
+      }).start(() => {
+        setVisible(false);
+      });
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [text]);
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View style={[styles.arHintBubbleWrap, { opacity: fadeAnim }]} pointerEvents="none">
+      <View style={styles.arHintBubble}>
+        <Text style={styles.arHintText}>{text}</Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+// Floating Quick Zoom & Reset controls (fades in after 6 seconds)
+function FloatingSideControls({
+  onZoomIn,
+  onZoomOut,
+  onReset,
+}: {
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onReset: () => void;
+}) {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    fadeAnim.setValue(0);
+    setVisible(false);
+    const timer = setTimeout(() => {
+      setVisible(true);
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }).start();
+    }, 6000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View style={[styles.arSideControls, { opacity: fadeAnim }]} pointerEvents="auto">
+      <Pressable
+        style={({ pressed }) => [styles.arSideBtn, pressed && styles.btnPressed]}
+        onPress={onZoomIn}
+      >
+        <Ionicons name="add" size={20} color="#1EC8A5" />
+      </Pressable>
+      <Pressable
+        style={({ pressed }) => [styles.arSideBtn, pressed && styles.btnPressed]}
+        onPress={onZoomOut}
+      >
+        <Ionicons name="remove" size={20} color="#1EC8A5" />
+      </Pressable>
+      <Pressable
+        style={({ pressed }) => [styles.arSideBtn, pressed && styles.btnPressed]}
+        onPress={onReset}
+      >
+        <Ionicons name="refresh" size={17} color="#94A3B8" />
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -131,28 +219,43 @@ function StatusPill({ label, color }: { label: string; color: string }) {
   );
 }
 
-// Shutter bar
-function ShutterBar({
-  onGallery,
+// Bottom controls bar
+function BottomControlsBar({
+  torch,
+  onTorchToggle,
   onFlip,
 }: {
-  onGallery: () => void;
+  torch: boolean;
+  onTorchToggle: () => void;
   onFlip: () => void;
 }) {
   return (
     <View style={styles.shutterBar}>
-      <Pressable style={styles.galleryBtn} onPress={onGallery}>
-        <View style={styles.galleryThumb}>
-          <Text style={styles.galleryThumbIcon}>{"🚗"}</Text>
+      <Pressable style={styles.controlBtn} onPress={onTorchToggle}>
+        <View
+          style={[
+            styles.controlThumb,
+            torch && {
+              backgroundColor: "rgba(242, 193, 78, 0.22)",
+              borderColor: "#F2C14E",
+            },
+          ]}
+        >
+          <Ionicons
+            name={torch ? "flashlight" : "flashlight-outline"}
+            size={22}
+            color={torch ? "#F2C14E" : "#E2FFF9"}
+          />
         </View>
-        <Text style={styles.galleryLabel}>Test AR</Text>
       </Pressable>
       <View style={styles.scanTargetBadge}>
+        <View style={styles.pulseDot} />
         <Text style={styles.scanTargetText}>AUTO SCANNING</Text>
       </View>
-      <Pressable style={styles.flipBtn} onPress={onFlip}>
-        <Text style={styles.flipIcon}>{"🔄"}</Text>
-        <Text style={styles.flipLabel}>Flip</Text>
+      <Pressable style={styles.controlBtn} onPress={onFlip}>
+        <View style={styles.controlThumb}>
+          <Ionicons name="camera-reverse-outline" size={22} color="#E2FFF9" />
+        </View>
       </Pressable>
     </View>
   );
@@ -172,8 +275,118 @@ export default function App() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [scannerLocked, setScannerLocked] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [flash, setFlash] = useState<FlashMode>("auto");
+  const [torch, setTorch] = useState(false);
+  const [zoom, setZoom] = useState(0);
   const [facing, setFacing] = useState<"front" | "back">("back");
+
+  // Interactive model scale & rotation state for screen gestures
+  const [modelScale, setModelScale] = useState<number>(0.2);
+  const [modelRotation, setModelRotation] = useState<[number, number, number]>([0, 0, 0]);
+
+  // Stable persistent refs for ultra-smooth 60fps gesture tracking
+  const currentScaleRef = useRef<number>(0.2);
+  const currentRotationRef = useRef<[number, number, number]>([0, 0, 0]);
+  const startScaleRef = useRef<number>(0.2);
+  const startRotationRef = useRef<[number, number, number]>([0, 0, 0]);
+  const startTouchPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const startPinchDistRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (content) {
+      const s = content.scale || 0.2;
+      setModelScale(s);
+      setModelRotation([0, 0, 0]);
+      currentScaleRef.current = s;
+      currentRotationRef.current = [0, 0, 0];
+      startScaleRef.current = s;
+      startRotationRef.current = [0, 0, 0];
+      startPinchDistRef.current = null;
+    }
+  }, [content?.id, content?.scale]);
+
+  // PanResponder is created once with persistent refs — zero re-binding overhead
+  const panResponder = useMemo(() => {
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches && touches.length >= 2) {
+          // 2-finger pinch initiated
+          const t1 = touches[0];
+          const t2 = touches[1];
+          startPinchDistRef.current = Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
+          startScaleRef.current = currentScaleRef.current;
+        } else if (touches && touches.length === 1) {
+          // 1-finger swipe initiated
+          startTouchPosRef.current = { x: touches[0].pageX, y: touches[0].pageY };
+          startRotationRef.current = [...currentRotationRef.current] as [number, number, number];
+          startPinchDistRef.current = null;
+        }
+      },
+      onPanResponderMove: (evt) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches && touches.length >= 2) {
+          // 2-FINGER PINCH: Instant smooth camera-style zoom
+          const t1 = touches[0];
+          const t2 = touches[1];
+          const currentDist = Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
+          if (startPinchDistRef.current && startPinchDistRef.current > 10) {
+            const factor = currentDist / startPinchDistRef.current;
+            const newScale = Math.max(0.005, Math.min(25.0, startScaleRef.current * factor));
+            currentScaleRef.current = newScale;
+            setModelScale(newScale);
+          }
+        } else if (touches && touches.length === 1 && !startPinchDistRef.current) {
+          // 1-FINGER SWIPE: Ultra-smooth 360 rotation (left/right) & tilt (up/down)
+          const currentX = touches[0].pageX;
+          const currentY = touches[0].pageY;
+          const deltaX = currentX - startTouchPosRef.current.x;
+          const deltaY = currentY - startTouchPosRef.current.y;
+
+          const newRotY = startRotationRef.current[1] - deltaX * 0.55;
+          const newRotX = Math.max(-85, Math.min(85, startRotationRef.current[0] + deltaY * 0.45));
+
+          currentRotationRef.current = [newRotX, newRotY, 0];
+          setModelRotation([newRotX, newRotY, 0]);
+        }
+      },
+      onPanResponderRelease: () => {
+        startScaleRef.current = currentScaleRef.current;
+        startRotationRef.current = [...currentRotationRef.current] as [number, number, number];
+        startPinchDistRef.current = null;
+      },
+      onPanResponderTerminate: () => {
+        startScaleRef.current = currentScaleRef.current;
+        startRotationRef.current = [...currentRotationRef.current] as [number, number, number];
+        startPinchDistRef.current = null;
+      },
+    });
+  }, []);
+
+  const handleZoomIn = () => {
+    const next = Math.min(25.0, currentScaleRef.current * 1.3);
+    currentScaleRef.current = next;
+    startScaleRef.current = next;
+    setModelScale(next);
+  };
+
+  const handleZoomOut = () => {
+    const next = Math.max(0.005, currentScaleRef.current * 0.75);
+    currentScaleRef.current = next;
+    startScaleRef.current = next;
+    setModelScale(next);
+  };
+
+  const handleResetOrientation = () => {
+    const s = content?.scale || 0.2;
+    currentScaleRef.current = s;
+    startScaleRef.current = s;
+    currentRotationRef.current = [0, 0, 0];
+    startRotationRef.current = [0, 0, 0];
+    setModelScale(s);
+    setModelRotation([0, 0, 0]);
+  };
 
   const arUnlocked = Boolean(content);
   const trackingTarget = content ? getTrackingTarget(content) : undefined;
@@ -224,8 +437,8 @@ export default function App() {
     return () => { mounted = false; };
   }, [arUnlocked, qrPayload]);
 
-  function resolveContent(contentId: string, choice?: ContentChoice) {
-    const manifestEntry = contentManifest[contentId];
+  function resolveContent(contentId: string, choice?: ContentChoice, dynamicContent?: MuralContent) {
+    const manifestEntry = dynamicContent ?? choice?.dynamicContent ?? contentManifest[contentId];
     setSelectedChoice(choice ?? null);
     if (!manifestEntry) {
       setMissingContentId(contentId);
@@ -246,17 +459,23 @@ export default function App() {
   }
 
   function resetScan() {
-    setQrPayload(null);
-    setChoices([]);
-    setSelectedChoice(null);
+    // Tear down the AR scene gracefully before unmounting ViroARSceneNavigator
+    setIsTransitioning(true);
     setContent(null);
-    setMissingContentId(null);
     setIsTrackingAnchor(false);
     setIsModelPlaced(false);
-    setScannerLocked(false);
-    setIsTransitioning(false);
-    setSetupState("checking");
-    setDetail("Scan a QR code to start AR");
+
+    // Give Viro native layer time to release resources before full reset
+    setTimeout(() => {
+      setQrPayload(null);
+      setChoices([]);
+      setSelectedChoice(null);
+      setMissingContentId(null);
+      setScannerLocked(false);
+      setIsTransitioning(false);
+      setSetupState("checking");
+      setDetail("Scan a QR code to start AR");
+    }, 350);
   }
 
   function handleQrScanned(result: BarcodeScanningResult) {
@@ -270,15 +489,11 @@ export default function App() {
       setDetail("QR code scanned. Choose an option");
       return;
     }
-    resolveContent(parsedPayload.qrId);
+    resolveContent(parsedPayload.qrId, undefined, parsedPayload.dynamicContent);
   }
 
   function handleChoiceSelected(choice: ContentChoice) {
-    resolveContent(choice.contentId, choice);
-  }
-
-  function cycleFlash() {
-    setFlash((f) => (f === "auto" ? "on" : f === "on" ? "off" : "auto"));
+    resolveContent(choice.contentId, choice, choice.dynamicContent);
   }
 
   function flipCamera() {
@@ -334,12 +549,14 @@ export default function App() {
         <CameraView
           active={!scannerLocked}
           facing={facing}
+          enableTorch={torch}
+          zoom={zoom}
           barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
           onBarcodeScanned={!scannerLocked ? handleQrScanned : undefined}
           style={StyleSheet.absoluteFillObject}
         />
         <SafeAreaView style={styles.cameraUI} pointerEvents="box-none">
-          <TopControlsBar flash={flash} onFlashToggle={cycleFlash} />
+          <TopControlsBar />
           <View style={styles.viewfinder} pointerEvents="none">
             <View style={styles.scanFrame}>
               <View style={[styles.corner, styles.cTL]} />
@@ -347,13 +564,13 @@ export default function App() {
               <View style={[styles.corner, styles.cBL]} />
               <View style={[styles.corner, styles.cBR]} />
               <ScanLine locked={scannerLocked} />
-              <View style={styles.crosshair} />
               <Text style={styles.scanHintText}>Align QR code within frame</Text>
             </View>
           </View>
-          <ZoomSelector />
-          <ShutterBar
-            onGallery={() => resolveContent("testcar")}
+          <ZoomSelector currentZoom={zoom} onZoomChange={setZoom} />
+          <BottomControlsBar
+            torch={torch}
+            onTorchToggle={() => setTorch((t) => !t)}
             onFlip={flipCamera}
           />
         </SafeAreaView>
@@ -413,7 +630,7 @@ export default function App() {
                   <Text style={styles.choiceCardLabel} numberOfLines={2}>{choice.label}</Text>
                   <Text style={styles.choiceCardSub}>Tap to launch AR experience</Text>
                 </View>
-                <Text style={styles.choiceCardArrow}>{">"}</Text>
+                <Ionicons name="chevron-forward" size={20} color="#1EC8A5" />
               </Pressable>
             ))}
           </ScrollView>
@@ -455,21 +672,17 @@ export default function App() {
   // AR Spatial View
   const trackingStatus = trackingTarget
     ? isTrackingAnchor ? "LOCKED" : "FIND QR"
-    : isModelPlaced ? "PLACED" : "TARGETING";
+    : "ACTIVE";
 
-  const statusColor = trackingStatus === "LOCKED" || trackingStatus === "PLACED"
+  const statusColor = trackingStatus === "LOCKED" || trackingStatus === "ACTIVE"
     ? "#1EC8A5"
-    : trackingStatus === "FIND QR"
-      ? "#F2C14E"
-      : "#94A3B8";
+    : "#F2C14E";
 
   const arHint = trackingTarget
     ? isTrackingAnchor
       ? "Content is anchored to the QR marker."
       : "Point camera back at the QR code to lock content."
-    : isModelPlaced
-      ? "Drag to slide. Pinch to resize. Two-finger twist to rotate."
-      : "Point camera at floor. Tap a surface to place model.";
+    : "Swipe 1 finger to rotate. Pinch anywhere to zoom.";
 
   return (
     <View style={styles.cameraRoot}>
@@ -485,47 +698,58 @@ export default function App() {
           onTrackingChange: setIsTrackingAnchor,
           isPlaced: isModelPlaced,
           onPlacementStateChange: setIsModelPlaced,
+          userScale: modelScale,
+          userRotation: modelRotation,
         }}
       />
+      {/* Full-screen gesture responder surface for smooth 1-finger swipe rotate and 2-finger pinch zoom */}
+      <View style={StyleSheet.absoluteFillObject} {...panResponder.panHandlers} pointerEvents="box-only" />
+
       <SafeAreaView style={styles.arHudSafeArea} pointerEvents="box-none">
         <View style={styles.arTopBar}>
-          <Pressable style={styles.arBackBtn} onPress={resetScan} pointerEvents="auto">
-            <Text style={styles.arBackIcon}>{"<"}</Text>
-            <Text style={styles.arBackText}>Camera</Text>
-          </Pressable>
-          <View style={styles.arContentInfo}>
-            <Text style={styles.arContentName} numberOfLines={1}>{content.name}</Text>
-            <Text style={styles.arContentSub}>Spatial View</Text>
-          </View>
-          <StatusPill label={trackingStatus} color={statusColor} />
-        </View>
-        <View style={styles.arHintBubbleWrap} pointerEvents="none">
-          <View style={styles.arHintBubble}>
-            <Text style={styles.arHintText}>{arHint}</Text>
-          </View>
-        </View>
-        <View style={styles.arBottomBar}>
-          {!trackingTarget && isModelPlaced ? (
-            <Pressable
-              style={({ pressed }) => [styles.arActionBtn, pressed && styles.btnPressed]}
-              onPress={() => setIsModelPlaced(false)}
-              pointerEvents="auto"
-            >
-              <Text style={styles.arActionBtnText}>Reposition</Text>
+          <View style={styles.arTopCard}>
+            {/* Left: back button */}
+            <Pressable style={styles.arBackBtn} onPress={resetScan} pointerEvents="auto">
+              <Ionicons name="chevron-back" size={18} color="#1EC8A5" />
+              <Text style={styles.arBackText}>Camera</Text>
             </Pressable>
-          ) : <View style={{ width: 48 }} />}
+
+            {/* Divider */}
+            <View style={styles.arTopDivider} />
+
+            {/* Center: title + subtitle */}
+            <View style={styles.arContentInfo}>
+              <Text style={styles.arContentName} numberOfLines={1}>{content.name}</Text>
+              <Text style={styles.arContentSub}>Spatial View</Text>
+            </View>
+
+            {/* Divider */}
+            <View style={styles.arTopDivider} />
+
+            {/* Right: live status badge */}
+            <View style={styles.arStatusBadge}>
+              <View style={[styles.arStatusDot, { backgroundColor: statusColor }]} />
+              <Text style={[styles.arStatusText, { color: statusColor }]}>{trackingStatus}</Text>
+            </View>
+          </View>
+        </View>
+        <FloatingHintBubble text={arHint} />
+
+        {/* Floating Quick Zoom & Reset controls (fades in after 6 seconds) */}
+        <FloatingSideControls
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+          onReset={handleResetOrientation}
+        />
+
+        <View style={styles.arBottomBar}>
+          <View style={{ width: 48 }} />
           <View style={styles.arShutterOuter}>
             <View style={styles.arShutterInner}>
               <Text style={styles.arShutterIcon}>AR</Text>
             </View>
           </View>
-          <Pressable
-            style={({ pressed }) => [styles.arResetBtn, pressed && styles.btnPressed]}
-            onPress={resetScan}
-            pointerEvents="auto"
-          >
-            <Text style={styles.arResetIcon}>X</Text>
-          </Pressable>
+          <View style={{ width: 48 }} />
         </View>
       </SafeAreaView>
       <StatusBar style="light" />
@@ -606,33 +830,14 @@ const styles = StyleSheet.create({
   },
   topControlsBar: {
     alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "center",
     paddingBottom: 8,
     paddingHorizontal: 16,
     paddingTop: (RNStatusBar.currentHeight ?? 24) + 8,
   },
-  topIconPill: {
-    borderRadius: 20,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  topIconText: {
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-  },
   appNameBadge: {
     alignItems: "center",
-    flexDirection: "row",
-  },
-  appNameDot: {
-    backgroundColor: "#1EC8A5",
-    borderRadius: 4,
-    height: 8,
-    marginRight: 6,
-    width: 8,
+    justifyContent: "center",
   },
   appNameText: {
     color: "#FFFFFF",
@@ -673,14 +878,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.9,
     shadowRadius: 8,
     elevation: 4,
-  },
-  crosshair: {
-    backgroundColor: "transparent",
-    borderColor: "rgba(255,255,255,0.25)",
-    borderRadius: 20,
-    borderWidth: 1,
-    height: 40,
-    width: 40,
   },
   scanHintText: {
     bottom: -28,
@@ -723,8 +920,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingBottom: 20,
+    paddingBottom: Platform.OS === "android" ? 44 : 20,
     paddingHorizontal: 32,
+  },
+  pulseDot: {
+    backgroundColor: "#1EC8A5",
+    borderRadius: 4,
+    height: 7,
+    marginRight: 7,
+    width: 7,
   },
   scanTargetBadge: {
     alignItems: "center",
@@ -732,6 +936,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(30, 200, 165, 0.4)",
     borderRadius: 20,
     borderWidth: 1,
+    flexDirection: "row",
     justifyContent: "center",
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -742,42 +947,20 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 1,
   },
-  galleryBtn: {
+  controlBtn: {
     alignItems: "center",
+    justifyContent: "center",
     width: 64,
   },
-  galleryThumb: {
+  controlThumb: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderColor: "rgba(255,255,255,0.3)",
-    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderColor: "rgba(255,255,255,0.25)",
+    borderRadius: 14,
     borderWidth: 1,
     height: 52,
     justifyContent: "center",
     width: 52,
-  },
-  galleryThumbIcon: {
-    fontSize: 24,
-  },
-  galleryLabel: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 10,
-    fontWeight: "600",
-    marginTop: 4,
-    textAlign: "center",
-  },
-  flipBtn: {
-    alignItems: "center",
-    width: 64,
-  },
-  flipIcon: {
-    fontSize: 24,
-  },
-  flipLabel: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 10,
-    fontWeight: "600",
-    marginTop: 4,
   },
   choiceRoot: {
     backgroundColor: "#050D0C",
@@ -785,7 +968,9 @@ const styles = StyleSheet.create({
   },
   choiceSafeArea: {
     flex: 1,
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: Platform.OS === "android" ? 40 : 20,
   },
   choiceHeader: {
     alignItems: "center",
@@ -902,45 +1087,77 @@ const styles = StyleSheet.create({
   },
   arTopBar: {
     alignItems: "center",
-    backgroundColor: "rgba(5, 13, 12, 0.75)",
-    borderBottomColor: "rgba(30,200,165,0.15)",
-    borderBottomWidth: 1,
+    backgroundColor: "transparent",
     flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    justifyContent: "center",
+    paddingBottom: 10,
+    paddingHorizontal: 14,
+    paddingTop: (RNStatusBar.currentHeight ?? 24) + 10,
+  },
+  arTopCard: {
+    alignItems: "center",
+    backgroundColor: "rgba(6, 18, 16, 0.72)",
+    borderColor: "rgba(30, 200, 165, 0.22)",
+    borderRadius: 24,
+    borderWidth: 1,
+    flexDirection: "row",
+    flex: 1,
+    overflow: "hidden",
+    paddingHorizontal: 4,
+    paddingVertical: 6,
   },
   arBackBtn: {
     alignItems: "center",
     flexDirection: "row",
-  },
-  arBackIcon: {
-    color: "#1EC8A5",
-    fontSize: 22,
-    fontWeight: "300",
-    lineHeight: 26,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   arBackText: {
     color: "#1EC8A5",
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "700",
-    marginLeft: 4,
+    marginLeft: 2,
+  },
+  arTopDivider: {
+    backgroundColor: "rgba(30, 200, 165, 0.2)",
+    height: 28,
+    width: 1,
   },
   arContentInfo: {
     alignItems: "center",
     flex: 1,
-    marginHorizontal: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 2,
   },
   arContentName: {
     color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "800",
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.2,
     textAlign: "center",
   },
   arContentSub: {
-    color: "#6ECAB8",
-    fontSize: 11,
+    color: "rgba(110,202,184,0.75)",
+    fontSize: 10,
     marginTop: 1,
+    textAlign: "center",
+  },
+  arStatusBadge: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  arStatusDot: {
+    borderRadius: 4,
+    height: 8,
+    width: 8,
+  },
+  arStatusText: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.5,
   },
   arHintBubbleWrap: {
     alignItems: "center",
@@ -964,12 +1181,11 @@ const styles = StyleSheet.create({
   },
   arBottomBar: {
     alignItems: "center",
-    backgroundColor: "rgba(5, 13, 12, 0.75)",
-    borderTopColor: "rgba(30,200,165,0.15)",
-    borderTopWidth: 1,
+    backgroundColor: "transparent",
+    borderTopWidth: 0,
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingBottom: 24,
+    paddingBottom: Platform.OS === "android" ? 48 : 24,
     paddingHorizontal: 28,
     paddingTop: 16,
   },
@@ -1018,9 +1234,24 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 48,
   },
-  arResetIcon: {
-    color: "#94A3B8",
-    fontSize: 16,
-    fontWeight: "700",
+  arSideControls: {
+    alignItems: "center",
+    backgroundColor: "rgba(6, 18, 16, 0.72)",
+    borderColor: "rgba(30, 200, 165, 0.22)",
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: 8,
+    padding: 4,
+    position: "absolute",
+    right: 16,
+    top: "42%",
+  },
+  arSideBtn: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 18,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
   },
 });
