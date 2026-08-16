@@ -5,16 +5,14 @@ import {
   ViroAmbientLight,
   ViroAnimations,
   ViroARImageMarker,
-  ViroARPlane,
-  ViroARPlaneSelector,
   ViroARScene,
   ViroBox,
   ViroDirectionalLight,
   ViroMaterials,
   ViroNode,
-  ViroQuad,
   ViroSphere,
   ViroVideo,
+  ViroText,
 } from "@reactvision/react-viro";
 
 import { getTrackingTarget, registerTrackingTargets } from "./arTargets";
@@ -92,31 +90,10 @@ export function initViroAnimations() {
 
 initViroAnimations();
 
-// ---------- Placement Reticle (shown before placing) ----------
-
-function PlacementReticle() {
-  return (
-    <ViroNode>
-      <ViroQuad
-        position={[0, 0.005, 0]}
-        rotation={[-90, 0, 0]}
-        width={0.25}
-        height={0.25}
-        materials={["reticle"]}
-      />
-      <ViroSphere
-        position={[0, 0.12, 0]}
-        radius={0.04}
-        materials={["markerBlue"]}
-        animation={{ name: "idleSpin", run: true, loop: true }}
-      />
-    </ViroNode>
-  );
-}
 
 // ---------- Placeholder Content ----------
 
-function PlaceholderContent() {
+function PlaceholderContent({ errorMsg }: { errorMsg?: string }) {
   return (
     <ViroNode>
       <ViroBox position={[0, 0.08, 0]} scale={[0.24, 0.16, 0.24]} materials={["markerGreen"]} />
@@ -126,29 +103,129 @@ function PlaceholderContent() {
         radius={0.11}
         materials={["markerBlue"]}
       />
+      {errorMsg ? (
+        <ViroText
+          text={errorMsg}
+          position={[0, 0.5, 0]}
+          scale={[0.3, 0.3, 0.3]}
+          style={{ fontFamily: "Arial", fontSize: 18, color: "#ff0000" }}
+        />
+      ) : null}
     </ViroNode>
   );
 }
 
+
 // ---------- 3D Model Content – downloads remote GLB to cache first ----------
+// NOTE: Viro3DObject CANNOT load remote https:// URLs directly.
+// The file MUST be downloaded to a local file:// path first.
 
 const ManifestContent = React.memo(function ManifestContent({ content }: { content: MuralContent }) {
-  const [loadError, setLoadError] = useState(false);
+  const [localUri, setLocalUri] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [loadError, setLoadError] = useState<string | false>(false);
 
   useEffect(() => {
     setLoadError(false);
-  }, [content.id]);
+    setLocalUri(null);
+    setDownloading(false);
+    setProgress(0);
 
-  if (loadError) {
-    return <PlaceholderContent />;
+    // If it's a bundled local asset, use it directly
+    if (content.localAsset != null) {
+      setLocalUri("__local__");
+      return;
+    }
+
+    const rawUrl = ((content.assetUrlAndroid ?? content.assetUrl ?? "") as string).trim();
+    if (!rawUrl) {
+      setLoadError("No asset URL configured");
+      return;
+    }
+
+    // Videos can be streamed — no need to download
+    if (content.assetType === "VIDEO") {
+      setLocalUri(rawUrl);
+      return;
+    }
+
+    // 3D models must be downloaded to a local path
+    const filename = rawUrl.split("?")[0].split("/").pop() ?? "model.glb";
+    const cacheDir = `${FileSystem.cacheDirectory}ar_models/`;
+    const destPath = `${cacheDir}${filename}`;
+
+    async function downloadAsset() {
+      setDownloading(true);
+      try {
+        await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
+
+        const info = await FileSystem.getInfoAsync(destPath);
+        if (info.exists && (info as any).size > 0) {
+          // Already cached — use it immediately
+          setLocalUri(destPath);
+          setDownloading(false);
+          return;
+        }
+
+        // Download with progress tracking
+        const downloadResumable = FileSystem.createDownloadResumable(
+          rawUrl,
+          destPath,
+          {},
+          (downloadProgress) => {
+            const pct =
+              downloadProgress.totalBytesExpectedToWrite > 0
+                ? downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite
+                : 0;
+            setProgress(Math.round(pct * 100));
+          }
+        );
+
+        const result = await downloadResumable.downloadAsync();
+        if (result && result.status === 200) {
+          setLocalUri(result.uri);
+        } else {
+          setLoadError(`Download failed: HTTP ${result?.status ?? "unknown"}`);
+        }
+      } catch (e: any) {
+        console.warn("Failed to download AR asset:", e);
+        setLoadError(`Network Error: ${e?.message ?? String(e)}`);
+      } finally {
+        setDownloading(false);
+      }
+    }
+
+    downloadAsset();
+  }, [content.id, content.localAsset, content.assetUrl, content.assetUrlAndroid]);
+
+  // Show progress while downloading
+  if (downloading) {
+    return (
+      <ViroNode>
+        <ViroText
+          text={`Downloading… ${progress}%`}
+          position={[0, 0.2, 0]}
+          scale={[0.3, 0.3, 0.3]}
+          style={{ fontFamily: "Arial", fontSize: 20, color: "#1EC8A5", textAlignVertical: "center", textAlign: "center" }}
+        />
+      </ViroNode>
+    );
   }
 
+  if (loadError) {
+    return <PlaceholderContent errorMsg={typeof loadError === "string" ? loadError : undefined} />;
+  }
+
+  if (!localUri) {
+    return null;
+  }
+
+  // --- VIDEO ---
   if (content.assetType === "VIDEO") {
-    const rawUrl = (content.assetUrlAndroid ?? content.assetUrl ?? "") as string;
-    if (!rawUrl) return <PlaceholderContent />;
     return (
       <ViroVideo
-        source={{ uri: rawUrl }}
+        source={{ uri: localUri }}
         loop={content.loop ?? true}
         paused={false}
         width={1.6}
@@ -156,19 +233,17 @@ const ManifestContent = React.memo(function ManifestContent({ content }: { conte
         position={[0, 0.5, 0]}
         onError={(event) => {
           console.warn("Video load error:", event?.nativeEvent);
-          setLoadError(true);
+          setLoadError("Video Error: " + (event?.nativeEvent?.error || JSON.stringify(event?.nativeEvent) || "Unknown"));
         }}
       />
     );
   }
 
-  const source = content.localAsset != null 
-    ? content.localAsset 
-    : { uri: (content.assetUrlAndroid ?? content.assetUrl ?? "") as string };
-
-  if (!source || (typeof source === 'object' && !source.uri)) {
-    return <PlaceholderContent />;
-  }
+  // --- 3D MODEL ---
+  const source =
+    localUri === "__local__"
+      ? (content.localAsset as any)
+      : { uri: localUri }; // This is now a file:// URI after download
 
   return (
     <Viro3DObject
@@ -182,7 +257,12 @@ const ManifestContent = React.memo(function ManifestContent({ content }: { conte
       }
       onError={(event) => {
         console.warn("3D model load error:", event?.nativeEvent);
-        setLoadError(true);
+        setLoadError(
+          "Model Error: " +
+            (event?.nativeEvent?.error ||
+              JSON.stringify(event?.nativeEvent) ||
+              "Unknown")
+        );
       }}
     />
   );
@@ -222,9 +302,7 @@ function InteractiveContainer({
 // ---------- Main AR Scene ----------
 
 export default function ARExperienceScene(props?: SceneNavigatorProps) {
-  const selectorRef = useRef<ViroARPlaneSelector>(null);
   const [hasAnchor, setHasAnchor] = useState(false);
-  const [internalPlaced, setInternalPlaced] = useState(false);
 
   const content = props?.sceneNavigator?.viroAppProps?.content;
   const trackingTarget = content ? getTrackingTarget(content) : undefined;
@@ -235,14 +313,12 @@ export default function ARExperienceScene(props?: SceneNavigatorProps) {
   const userRotation = props?.sceneNavigator?.viroAppProps?.userRotation;
   const userPosition = props?.sceneNavigator?.viroAppProps?.userPosition;
 
-  const isPlaced = externalPlaced ?? internalPlaced;
 
   useEffect(() => {
     registerTrackingTargets();
   }, []);
 
   useEffect(() => {
-    setInternalPlaced(false);
     onPlacementStateChange?.(false);
   }, [content?.id]);
 
@@ -257,13 +333,11 @@ export default function ARExperienceScene(props?: SceneNavigatorProps) {
 
   return (
     <ViroARScene
-      anchorDetectionTypes={trackingTarget ? ["Images"] : ["PlanesHorizontal"]}
-      onAnchorFound={(anchor) => selectorRef.current?.handleAnchorFound(anchor)}
-      onAnchorUpdated={(anchor) => selectorRef.current?.handleAnchorUpdated(anchor)}
-      onAnchorRemoved={(anchor) => anchor && selectorRef.current?.handleAnchorRemoved(anchor)}
+      anchorDetectionTypes={trackingTarget ? ["Images"] : []}
     >
       <ViroAmbientLight color="#ffffff" intensity={720} />
       <ViroDirectionalLight color="#ffffff" direction={[0, -1, -0.5]} />
+      <ViroDirectionalLight color="#ffffff" direction={[0.5, -0.5, 0.5]} intensity={400} />
 
       {trackingTarget ? (
         // ---- QR Image Marker Mode ----
@@ -295,28 +369,17 @@ export default function ARExperienceScene(props?: SceneNavigatorProps) {
           </InteractiveContainer>
         </ViroNode>
       ) : (
-        // ---- Sandbox / Plane Placement Mode (Scenario B) ----
-        <ViroNode>
-          <ViroARPlaneSelector
-            ref={selectorRef}
-            minHeight={0.1}
-            minWidth={0.1}
-            alignment="Horizontal"
-            onPlaneSelected={() => {
-              setInternalPlaced(true);
-              onPlacementStateChange?.(true);
-            }}
+        // ---- Sandbox / Instant Placement Mode (Scenario B) ----
+        // Model is placed directly in front of the user — no tap required
+        <ViroNode position={[0, -0.4, -1.2]}>
+          <InteractiveContainer
+            content={content}
+            userScale={userScale}
+            userRotation={userRotation}
+            userPosition={userPosition}
           >
-            <InteractiveContainer
-              content={content}
-              userScale={userScale}
-              userRotation={userRotation}
-              userPosition={userPosition}
-            >
-              <ManifestContent content={content} />
-            </InteractiveContainer>
-          </ViroARPlaneSelector>
-          {!isPlaced && <PlacementReticle />}
+            <ManifestContent content={content} />
+          </InteractiveContainer>
         </ViroNode>
       )}
     </ViroARScene>
