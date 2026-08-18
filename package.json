@@ -15,7 +15,7 @@
     "@reactvision/react-viro": "^2.57.5",
     "@reactvision/react-viro-face-tracking": "^1.0.0",
     "@reactvision/react-viro-onnx": "^1.0.0",
-    "expo": "~54.0.0",
+    "expo": "~54.0.37",
     "expo-camera": "~17.0.10",
     "expo-location": "~19.0.8",
     "expo-sensors": "~15.0.8",

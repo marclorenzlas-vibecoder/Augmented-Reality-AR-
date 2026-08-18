@@ -4,7 +4,7 @@ import {
   Viro3DObject,
   ViroAmbientLight,
   ViroAnimations,
-  ViroARImageMarker,
+  ViroARPlaneSelector,
   ViroARScene,
   ViroBox,
   ViroDirectionalLight,
@@ -207,7 +207,7 @@ const ManifestContent = React.memo(function ManifestContent({ content }: { conte
           text={`Downloading… ${progress}%`}
           position={[0, 0.2, 0]}
           scale={[0.3, 0.3, 0.3]}
-          style={{ fontFamily: "Arial", fontSize: 20, color: "#1EC8A5", textAlignVertical: "center", textAlign: "center" }}
+          style={{ fontFamily: "Arial", fontSize: 20, color: "#3B82F6", textAlignVertical: "center", textAlign: "center" }}
         />
       </ViroNode>
     );
@@ -331,57 +331,33 @@ export default function ARExperienceScene(props?: SceneNavigatorProps) {
     onTrackingChange?.(isTracking);
   }
 
+  function handlePlaneSelected() {
+    setTracking(true);
+    onPlacementStateChange?.(true);
+  }
+
   return (
-    <ViroARScene
-      anchorDetectionTypes={trackingTarget ? ["Images"] : []}
-    >
+    <ViroARScene>
       <ViroAmbientLight color="#ffffff" intensity={720} />
       <ViroDirectionalLight color="#ffffff" direction={[0, -1, -0.5]} />
       <ViroDirectionalLight color="#ffffff" direction={[0.5, -0.5, 0.5]} intensity={400} />
 
-      {trackingTarget ? (
-        // ---- QR Image Marker Mode ----
-        <ViroARImageMarker
-          target={trackingTarget.targetName}
-          onAnchorFound={() => setTracking(true)}
-          onAnchorRemoved={() => setTracking(false)}
-          pauseUpdates={!hasAnchor}
+      {/* ---- Tap-to-Place Surface Anchoring Mode ---- */}
+      <ViroARPlaneSelector
+        minHeight={0.1}
+        minWidth={0.1}
+        alignment="Horizontal"
+        onPlaneSelected={handlePlaneSelected}
+      >
+        <InteractiveContainer
+          content={content}
+          userScale={userScale}
+          userRotation={userRotation}
+          userPosition={userPosition}
         >
-          <InteractiveContainer
-            content={content}
-            userScale={userScale}
-            userRotation={userRotation}
-            userPosition={userPosition}
-          >
-            <ManifestContent content={content} />
-          </InteractiveContainer>
-        </ViroARImageMarker>
-      ) : content.latitude !== undefined && content.longitude !== undefined ? (
-        // ---- Geo-Anchored Discovery Mode (Scenario A) ----
-        <ViroNode position={[0, -0.25, -1.5]}>
-          <InteractiveContainer
-            content={content}
-            userScale={userScale}
-            userRotation={userRotation}
-            userPosition={userPosition}
-          >
-            <ManifestContent content={content} />
-          </InteractiveContainer>
-        </ViroNode>
-      ) : (
-        // ---- Sandbox / Instant Placement Mode (Scenario B) ----
-        // Model is placed directly in front of the user — no tap required
-        <ViroNode position={[0, -0.4, -1.2]}>
-          <InteractiveContainer
-            content={content}
-            userScale={userScale}
-            userRotation={userRotation}
-            userPosition={userPosition}
-          >
-            <ManifestContent content={content} />
-          </InteractiveContainer>
-        </ViroNode>
-      )}
+          <ManifestContent content={content} />
+        </InteractiveContainer>
+      </ViroARPlaneSelector>
     </ViroARScene>
   );
 }

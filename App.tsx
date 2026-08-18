@@ -42,7 +42,7 @@ export function initViroMaterials() {
   if (manager && ViroMaterials?.createMaterials) {
     try {
       ViroMaterials.createMaterials({
-        markerGreen: { diffuseColor: "#1EC8A5", lightingModel: "Phong" },
+        markerGreen: { diffuseColor: "#3B82F6", lightingModel: "Phong" },
         markerBlue: { diffuseColor: "#2F80ED", lightingModel: "Phong" },
         reticle: { diffuseColor: "#1EC8A580", lightingModel: "Constant" },
       });
@@ -192,13 +192,13 @@ function FloatingSideControls({
         style={({ pressed }) => [styles.arSideBtn, pressed && styles.btnPressed]}
         onPress={onZoomIn}
       >
-        <Ionicons name="add" size={20} color="#1EC8A5" />
+        <Ionicons name="add" size={20} color="#3B82F6" />
       </Pressable>
       <Pressable
         style={({ pressed }) => [styles.arSideBtn, pressed && styles.btnPressed]}
         onPress={onZoomOut}
       >
-        <Ionicons name="remove" size={20} color="#1EC8A5" />
+        <Ionicons name="remove" size={20} color="#3B82F6" />
       </Pressable>
       <Pressable
         style={({ pressed }) => [styles.arSideBtn, pressed && styles.btnPressed]}
@@ -245,7 +245,7 @@ function BottomControlsBar({
           <Ionicons
             name={torch ? "flashlight" : "flashlight-outline"}
             size={22}
-            color={torch ? "#F2C14E" : "#E2FFF9"}
+            color={torch ? "#F2C14E" : "#E8F0FE"}
           />
         </View>
       </Pressable>
@@ -255,7 +255,7 @@ function BottomControlsBar({
       </View>
       <Pressable style={styles.controlBtn} onPress={onFlip}>
         <View style={styles.controlThumb}>
-          <Ionicons name="camera-reverse-outline" size={22} color="#E2FFF9" />
+          <Ionicons name="camera-reverse-outline" size={22} color="#E8F0FE" />
         </View>
       </Pressable>
     </View>
@@ -593,7 +593,7 @@ export default function App() {
           <View style={styles.splashLogo}>
             <Text style={styles.splashLogoText}>AR</Text>
           </View>
-          <ActivityIndicator color="#1EC8A5" size="large" style={{ marginTop: 24 }} />
+          <ActivityIndicator color="#3B82F6" size="large" style={{ marginTop: 24 }} />
           <Text style={styles.splashTitle}>Opening Camera</Text>
           <Text style={styles.splashSub}>Preparing the scanner...</Text>
         </View>
@@ -713,7 +713,7 @@ export default function App() {
                   <Text style={styles.choiceCardLabel} numberOfLines={2}>{choice.label}</Text>
                   <Text style={styles.choiceCardSub}>Tap to launch AR experience</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#1EC8A5" />
+                <Ionicons name="chevron-forward" size={20} color="#3B82F6" />
               </Pressable>
             ))}
           </ScrollView>
@@ -748,11 +748,11 @@ export default function App() {
               <Ionicons 
                 name="navigate" 
                 size={100} 
-                color="#1EC8A5" 
+                color="#3B82F6" 
                 style={{ transform: [{ rotate: `${arrowRotation - 45}deg` }] }}
               />
             ) : (
-              <ActivityIndicator color="#1EC8A5" size="large" />
+              <ActivityIndicator color="#3B82F6" size="large" />
             )}
           </View>
           <Text style={{ color: '#fff', fontSize: 16, marginTop: 40, textAlign: 'center', paddingHorizontal: 40, lineHeight: 24, opacity: 0.8 }}>
@@ -780,7 +780,7 @@ export default function App() {
             <Text style={styles.splashLogoText}>AR</Text>
           </View>
           {setupState === "checking" ? (
-            <ActivityIndicator color="#1EC8A5" size="large" style={{ marginTop: 24 }} />
+            <ActivityIndicator color="#3B82F6" size="large" style={{ marginTop: 24 }} />
           ) : null}
           <Text style={styles.splashTitle}>
             {setupState === "checking" ? "Preparing Spatial View" : "AR Unavailable"}
@@ -795,19 +795,15 @@ export default function App() {
   if (!content) return null;
 
   // AR Spatial View
-  const trackingStatus = trackingTarget
-    ? isTrackingAnchor ? "LOCKED" : "FIND QR"
-    : "ACTIVE";
+  const trackingStatus = isModelPlaced ? "PLACED" : "SCAN SURFACE";
 
-  const statusColor = trackingStatus === "LOCKED" || trackingStatus === "ACTIVE"
-    ? "#1EC8A5"
+  const statusColor = isModelPlaced
+    ? "#3B82F6"
     : "#F2C14E";
 
-  const arHint = trackingTarget
-    ? isTrackingAnchor
-      ? "Content is anchored to the QR marker."
-      : "Point camera back at the QR code to lock content."
-    : "Swipe 1 finger to rotate. Pinch anywhere to zoom.";
+  const arHint = isModelPlaced
+    ? "Swipe 1 finger to rotate. Pinch anywhere to zoom."
+    : "Point camera at the floor/surface and tap the grid to place.";
 
   return (
     <View style={styles.cameraRoot}>
@@ -835,7 +831,7 @@ export default function App() {
           <View style={styles.arTopCard}>
             {/* Left: back button */}
             <Pressable style={styles.arBackBtn} onPress={resetScan} pointerEvents="auto">
-              <Ionicons name="chevron-back" size={18} color="#1EC8A5" />
+              <Ionicons name="chevron-back" size={18} color="#3B82F6" />
               <Text style={styles.arBackText}>Camera</Text>
             </Pressable>
 
@@ -892,14 +888,14 @@ const styles = StyleSheet.create({
   },
   splashBg: {
     alignItems: "center",
-    backgroundColor: "#050D0C",
+    backgroundColor: "#020814",
     flex: 1,
     justifyContent: "center",
     padding: 24,
   },
   splashCard: {
     alignItems: "center",
-    backgroundColor: "#0C1A18",
+    backgroundColor: "#0A1526",
     borderColor: "#1EC8A520",
     borderRadius: 20,
     borderWidth: 1,
@@ -909,7 +905,7 @@ const styles = StyleSheet.create({
   },
   splashLogo: {
     alignItems: "center",
-    backgroundColor: "#0E2420",
+    backgroundColor: "#0E1F3B",
     borderColor: "#1EC8A530",
     borderRadius: 16,
     borderWidth: 1,
@@ -918,33 +914,33 @@ const styles = StyleSheet.create({
     width: 72,
   },
   splashLogoText: {
-    color: "#1EC8A5",
+    color: "#3B82F6",
     fontSize: 26,
     fontWeight: "900",
   },
   splashTitle: {
-    color: "#E2FFF9",
+    color: "#E8F0FE",
     fontSize: 22,
     fontWeight: "800",
     marginTop: 20,
     textAlign: "center",
   },
   splashSub: {
-    color: "#6ECAB8",
+    color: "#8AB4F8",
     fontSize: 14,
     lineHeight: 20,
     marginTop: 8,
     textAlign: "center",
   },
   primaryBtn: {
-    backgroundColor: "#1EC8A5",
+    backgroundColor: "#3B82F6",
     borderRadius: 12,
     marginTop: 22,
     paddingHorizontal: 28,
     paddingVertical: 14,
   },
   primaryBtnText: {
-    color: "#050D0C",
+    color: "#020814",
     fontSize: 15,
     fontWeight: "900",
     textAlign: "center",
@@ -984,7 +980,7 @@ const styles = StyleSheet.create({
     width: "72%",
   },
   corner: {
-    borderColor: "#1EC8A5",
+    borderColor: "#3B82F6",
     height: 40,
     position: "absolute",
     width: 40,
@@ -994,12 +990,12 @@ const styles = StyleSheet.create({
   cBL: { borderBottomWidth: 4, borderLeftWidth: 4, bottom: 0, left: 0, borderBottomLeftRadius: 6 },
   cBR: { borderBottomWidth: 4, borderRightWidth: 4, bottom: 0, right: 0, borderBottomRightRadius: 6 },
   scanLine: {
-    backgroundColor: "#1EC8A5",
+    backgroundColor: "#3B82F6",
     height: 2,
     left: 12,
     position: "absolute",
     right: 12,
-    shadowColor: "#1EC8A5",
+    shadowColor: "#3B82F6",
     shadowOpacity: 0.9,
     shadowRadius: 8,
     elevation: 4,
@@ -1049,7 +1045,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   pulseDot: {
-    backgroundColor: "#1EC8A5",
+    backgroundColor: "#3B82F6",
     borderRadius: 4,
     height: 7,
     marginRight: 7,
@@ -1067,7 +1063,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   scanTargetText: {
-    color: "#1EC8A5",
+    color: "#3B82F6",
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 1,
@@ -1088,7 +1084,7 @@ const styles = StyleSheet.create({
     width: 52,
   },
   choiceRoot: {
-    backgroundColor: "#050D0C",
+    backgroundColor: "#020814",
     flex: 1,
   },
   choiceSafeArea: {
@@ -1103,19 +1099,19 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   choiceEyebrow: {
-    color: "#1EC8A5",
+    color: "#3B82F6",
     fontSize: 11,
     fontWeight: "800",
     letterSpacing: 2,
   },
   choiceTitle: {
-    color: "#E2FFF9",
+    color: "#E8F0FE",
     fontSize: 24,
     fontWeight: "900",
     marginTop: 2,
   },
   choiceSubtitle: {
-    color: "#6ECAB8",
+    color: "#8AB4F8",
     fontSize: 14,
     marginBottom: 16,
     marginTop: 16,
@@ -1126,7 +1122,7 @@ const styles = StyleSheet.create({
   },
   choiceCard: {
     alignItems: "center",
-    backgroundColor: "#0C1A18",
+    backgroundColor: "#0A1526",
     borderColor: "#1EC8A520",
     borderRadius: 16,
     borderWidth: 1,
@@ -1136,7 +1132,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   choiceCardPressed: {
-    backgroundColor: "#132820",
+    backgroundColor: "#122A50",
     borderColor: "#1EC8A550",
   },
   choiceCardNum: {
@@ -1149,23 +1145,23 @@ const styles = StyleSheet.create({
     width: 40,
   },
   choiceCardNumText: {
-    color: "#1EC8A5",
+    color: "#3B82F6",
     fontSize: 16,
     fontWeight: "900",
   },
   choiceCardLabel: {
-    color: "#E2FFF9",
+    color: "#E8F0FE",
     fontSize: 16,
     fontWeight: "800",
     lineHeight: 22,
   },
   choiceCardSub: {
-    color: "#6ECAB8",
+    color: "#8AB4F8",
     fontSize: 12,
     marginTop: 2,
   },
   choiceCardArrow: {
-    color: "#1EC8A5",
+    color: "#3B82F6",
     fontSize: 24,
     fontWeight: "300",
     marginLeft: 8,
@@ -1179,7 +1175,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   ghostBtnText: {
-    color: "#6ECAB8",
+    color: "#8AB4F8",
     fontSize: 14,
     fontWeight: "700",
   },
@@ -1238,7 +1234,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   arBackText: {
-    color: "#1EC8A5",
+    color: "#3B82F6",
     fontSize: 14,
     fontWeight: "700",
     marginLeft: 2,
@@ -1262,7 +1258,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   arContentSub: {
-    color: "rgba(110,202,184,0.75)",
+    color: "rgba(138,180,248,0.75)",
     fontSize: 10,
     marginTop: 1,
     textAlign: "center",
@@ -1289,8 +1285,8 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   arHintBubble: {
-    backgroundColor: "rgba(5,13,12,0.78)",
-    borderColor: "rgba(30,200,165,0.25)",
+    backgroundColor: "rgba(2,8,20,0.78)",
+    borderColor: "rgba(59,130,246,0.25)",
     borderRadius: 14,
     borderWidth: 1,
     maxWidth: 320,
@@ -1298,7 +1294,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   arHintText: {
-    color: "#C8EFE8",
+    color: "#D0E2FF",
     fontSize: 13,
     fontWeight: "600",
     lineHeight: 19,
@@ -1323,13 +1319,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   arActionBtnText: {
-    color: "#1EC8A5",
+    color: "#3B82F6",
     fontSize: 13,
     fontWeight: "800",
   },
   arShutterOuter: {
     alignItems: "center",
-    borderColor: "#1EC8A5",
+    borderColor: "#3B82F6",
     borderRadius: 40,
     borderWidth: 2.5,
     height: 72,
@@ -1345,7 +1341,7 @@ const styles = StyleSheet.create({
     width: 58,
   },
   arShutterIcon: {
-    color: "#1EC8A5",
+    color: "#3B82F6",
     fontSize: 14,
     fontWeight: "900",
   },
